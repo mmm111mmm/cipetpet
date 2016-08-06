@@ -6,27 +6,27 @@ import javax.servlet.http.HttpServletRequest
 import javax.servlet.http.HttpServletResponse
 
 class HttpServer {
-  val handler = new MutableHandler()  
+  val handler = new MutableHandler  
 
   def run(port: Int) = {
     val server = new Server(port)
-    server.setHandler(handler)
-    server.start()
+    server setHandler handler
+    server.start
   }
 }
 
-protected class MutableHandler extends AbstractHandler {
+class MutableHandler extends AbstractHandler {
   var html = <h1>Ci and Pet and Pet</h1>
 
   override def handle(target: String, 
-                      req: org.eclipse.jetty.server.Request,
+                      req: Request,
                       httpReq: HttpServletRequest, 
                       httpRes: HttpServletResponse) = {
-    httpRes.setContentType("text/html")
-    httpRes.setStatus(HttpServletResponse.SC_OK)
-    httpRes.getWriter().println(html.toString())
-    req.setHandled(true)
+    httpRes setContentType "text/html"
+    httpRes setStatus HttpServletResponse.SC_OK
+    httpRes getWriter() println html.toString
+    req setHandled true
   }
 }
 
-new HttpServer().run(8901)
+new HttpServer run 8901
