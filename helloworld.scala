@@ -16,7 +16,7 @@ class HttpServer {
 }
 
 protected class MutableHandler extends AbstractHandler {
-  var html = <h1>Ci and Pet and Pet</h1>
+  var html = <h1>Testing github web hook!</h1>
 
   override def handle(target: String, 
                       req: org.eclipse.jetty.server.Request,
