@@ -1,0 +1,14 @@
+FROM ubuntu:trusty-20160711
+# Install ubuntu instllation tools and the java 8 repo
+RUN apt-get update && apt-get -y install software-properties-common && add-apt-repository -y ppa:webupd8team/java
+# Auto accept the java 8 licence
+RUN echo debconf shared/accepted-oracle-license-v1-1 select true | debconf-set-selections
+RUN echo debconf shared/accepted-oracle-license-v1-1 seen true | debconf-set-selections
+# Install java8, git and wget
+RUN apt-get update && apt-get -y install oracle-java8-installer git wget
+# Download and install scala 2.11.8
+RUN wget http://downloads.lightbend.com/scala/2.11.8/scala-2.11.8.deb && dpkg -i scala-2.11.8.deb
+# Download the jetty runner web server
+RUN wget http://central.maven.org/maven2/org/eclipse/jetty/jetty-runner/9.4.0.M0/jetty-runner-9.4.0.M0.jar
+# When the docker container is run, clone the repo, copy the jetty runner into it, run the scala program
+ENTRYPOINT /bin/bash -c "git clone https://github.com/newfivefour/cipetpet && cd cipetpet && cp ../jetty-runner-9.4.0.M0.jar . && scala -cp jetty-runner-9.4.0.M0.jar helloworld.scala && /bin/bash"
