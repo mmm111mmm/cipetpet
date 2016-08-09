@@ -16,7 +16,7 @@ class HttpServer {
 }
 
 class MutableHandler extends AbstractHandler {
-  var html = <h1>Ciiiiipeeeeetpeeeet!</h1>
+  var html = <h1>brlling brrrling cak cakc cak!</h1>
 
   override def handle(target: String, 
                       req: Request,
