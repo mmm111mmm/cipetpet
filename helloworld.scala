@@ -1,18 +1,8 @@
 import org.eclipse.jetty.server.handler.AbstractHandler
-import org.eclipse.jetty.server.{Handler, Server, Request}
+import org.eclipse.jetty.server.{Server, Request}
 import javax.servlet.http.{HttpServletRequest, HttpServletResponse}
 
-class HttpServer {
-  val handler = new MutableHandler
-
-  def run(port: Int) = {
-    val server = new Server(port)
-    server.setHandler(handler)
-    server.start
-  }
-}
-
-class MutableHandler extends AbstractHandler {
+class Handler extends AbstractHandler {
   var html = <h1>brlling brrrling cak cakc cak!</h1>
 
   override def handle(target: String, 
@@ -26,4 +16,6 @@ class MutableHandler extends AbstractHandler {
   }
 }
 
-new HttpServer().run(8901)
+val server = new Server(8901)
+server.setHandler(new Handler)
+server.start
