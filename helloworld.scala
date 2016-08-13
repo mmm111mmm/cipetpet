@@ -1,9 +1,6 @@
 import org.eclipse.jetty.server.handler.AbstractHandler
-import org.eclipse.jetty.server.Handler
-import org.eclipse.jetty.server.Server
-import org.eclipse.jetty.server.Request
-import javax.servlet.http.HttpServletRequest
-import javax.servlet.http.HttpServletResponse
+import org.eclipse.jetty.server.{Handler, Server, Request}
+import javax.servlet.http.{HttpServletRequest, HttpServletResponse}
 
 class HttpServer {
   val handler = new MutableHandler
