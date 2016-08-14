@@ -24,7 +24,7 @@ object rest {
     def home : String = {
       return """<h1>THIS IS NOW A WEB SERVICE</h1>
                 |<p>We should really have automatically generated documentation!</p>
-                |<p>Check the code in github instead.</p>
+                |<p>Check the <a href="https://github.com/newfivefour/cipetpet/blob/master/rest.scala">code</a> in github instead.</p>
                 |""".stripMargin
     }
   }
