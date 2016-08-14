@@ -1,18 +1,20 @@
 YES
 ===
 
-First download the jetty runner. This is an entire web server is a jar.
+First download everything we need for Jetty and Jersey. This is an entire web server and the stuff to make nice web services.
 
-    wget http://central.maven.org/maven2/org/eclipse/jetty/jetty-runner/9.4.0.M0/jetty-runner-9.4.0.M0.jar
+It's a bash script with loads of wget commands, that places the jars into the directory dependencies. 
 
-I'm no monster, so I'm not putting the jar in the git repo. (We can automate pulling this down later)
+I'm being awkward and not using gradle or whatever.
+
+    bash deps.bash
 
 Then use that in your classpath argument to scala.
 
-    scala -cp jetty-runner-9.4.0.M0.jar helloworld.scala
+    scala -cp "dependencies/*" rest.scala
 
 In another terminal window, let's call it.
 
-    curl localhost:8901
+    curl localhost:8901/hello
 
-You should see <h1>Ci and Pet and Pet</h1>
+You should see some output.
