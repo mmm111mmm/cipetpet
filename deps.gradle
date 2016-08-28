@@ -13,7 +13,8 @@ dependencies {
    compile "org.slf4j:slf4j-simple:1.6.1"
    compile 'com.newfivefour:jersey-custom-validation-error:0.0.2'
 
-  compile group: 'org.xerial', name: 'sqlite-jdbc', version: '3.8.11.2'
+   compile group: 'org.xerial', name: 'sqlite-jdbc', version: '3.8.11.2'
+   compile 'org.testng:testng:6.8'
 
    //compile group: 'com.fasterxml.jackson.core', name: 'jackson-annotations', version: '2.16'
    //compile 'com.fasterxml.jackson.module:jackson-module-jsonSchema:2.5.2'

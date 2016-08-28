@@ -80,8 +80,6 @@ object rest {
 
     var sqlAccess: Sqlite = new Sqlite("jdbc:sqlite:db")
 
-    println(sqlAccess.query("select * from users"))
-
     def throwSqlToJerseyException(inputOb: Object, e: Throwable) = 
       e match {
         case SqlUniqueConstraintException(col, input) => throwCustomValidationException(inputOb, col, "Duplicate " + col, input)
