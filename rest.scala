@@ -12,6 +12,7 @@ import com.fasterxml.jackson.annotation.{JsonAutoDetect}
 import com.newfivefour.jerseycustomvalidationerror.CustomValidationError._
 import java.sql.{DriverManager, Statement, ResultSet, SQLException}
 import org.mindrot.jbcrypt.BCrypt
+import java.util.UUID
 
 object rest { 
 
@@ -27,6 +28,11 @@ object rest {
     @NotNull var email: String = null
     @NotNull var username: String = null
     @NotNull var password: String = null
+  }
+
+  @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+  class UserSession(sess: String) extends Object() {
+    @NotNull var session: String = sess
   }
 
   trait ResultSetToMap {
@@ -80,9 +86,9 @@ object rest {
 
     def retrieveOne(table: String, cols: Map[String, String]): Map[String, Object] = {
       var results = retrieve(table, cols)
-      if(results.length>1) throw SqlExceptedFewerRows()
+      if(results.length>1) throw new SqlExceptedFewerRows
       else if(results.length==1) results(0)
-      else throw SqlNoRowFound()
+      else throw new SqlNoRowFound
     }
 
     def retrieve(table: String, cols: Map[String, String]): List[Map[String, Object]] = {
@@ -114,23 +120,28 @@ object rest {
 
     var sqlAccess: Sqlite = new Sqlite("jdbc:sqlite:db")
 
-    @Path("login") @POST @Produces(Array(MediaType.APPLICATION_JSON))
-    def login(@Valid r: LoginUser) = 
-      Try({
-        var resp = sqlAccess.retrieveOne("users", Map("username" -> r.username))
-        if(!BCrypt.checkpw(r.password, resp.get("password").get.asInstanceOf[String]))
-          throw SqlNoRowFound()
-      }) match {
-        case Failure(SqlNoRowFound()) => throwCustomValidationException(r, "general", "Bad username or pw", "") 
-        case Failure(e)               => throwSqlToJerseyException(r, e)
-        case Success(s)               => Response.ok().build
-      }
-
     def throwSqlToJerseyException(inputOb: Object, e: Throwable) = e match {
       case SqlUniqueConstraintException(col, input) => throwCustomValidationException(inputOb, col, "Duplicate " + col, input)
       case SqlNoRowFound()                          => throwCustomValidationException(inputOb, "", "Not found", "")
       case _ => throw e
     }
+
+    @Path("login") @POST @Produces(Array(MediaType.APPLICATION_JSON))
+    def login(@Valid r: LoginUser) = 
+      Try({
+        var resp = sqlAccess.retrieveOne("users", Map("username" -> r.username))
+        if(!BCrypt.checkpw(r.password, resp.get("password").get.asInstanceOf[String])) throw new SqlNoRowFound
+        var uuid = UUID.randomUUID().toString
+        sqlAccess.insert("user_sessions", 
+                         Map("user_id" -> resp.get("id").get.asInstanceOf[String], 
+                             "token"   -> uuid))
+        new UserSession(uuid)
+        
+      }) match {
+        case Failure(SqlNoRowFound()) => throwCustomValidationException(r, "general", "Bad username or pw", "") 
+        case Failure(e)               => throwSqlToJerseyException(r, e)
+        case Success(s)               => Response.ok(s).build
+      }
 
     @Path("register") @POST @Produces(Array(MediaType.APPLICATION_JSON))
     def register(@Valid r: RegisterUser) = 

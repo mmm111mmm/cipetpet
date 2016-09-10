@@ -1,7 +1,8 @@
 <suite name="Suite1" verbose="2">
   <test name="test1">
     <classes>
-      <class name="TestSimple" />
+      <class name="RegisterTests" />
+      <class name="LoginTests" />
     </classes>
   </test>
 </suite>

@@ -10,7 +10,7 @@ import com.fasterxml.jackson.databind.node._
 import com.fasterxml.jackson.databind._
 import sys.process._
 
-class TestSimple {
+class RegisterTests {
 
   var registerUrl = "http://localhost:8901/register" 
 
@@ -78,6 +78,7 @@ class TestSimple {
     println("Before test")
     "rm db".!
     "bash db.migration.1".!
+    "bash db.migration.2".!
     rest.main(null)
   } 
 
