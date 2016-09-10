@@ -1,0 +1,1 @@
+echo "create table user_sessions (id integer primary key not null, user_id integer not null, token text unique not null, foreign key(user_id) references users(id));" | sqlite3 db -interactive
