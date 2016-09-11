@@ -1,5 +1,8 @@
 import java.util.{ArrayList, HashMap, HashSet}
+import java.sql.{DriverManager, Statement, ResultSet, SQLException}
+import java.util.UUID
 import scala.util._
+import collection.JavaConversions._
 import javax.validation.constraints.{NotNull}
 import javax.validation.{Valid, ConstraintViolation, ConstraintViolationException}
 import javax.validation.metadata.ConstraintDescriptor
@@ -10,9 +13,7 @@ import org.glassfish.jersey.jetty.JettyHttpContainerFactory
 import org.eclipse.jetty.server.Server
 import com.fasterxml.jackson.annotation.{JsonAutoDetect}
 import com.newfivefour.jerseycustomvalidationerror.CustomValidationError._
-import java.sql.{DriverManager, Statement, ResultSet, SQLException}
 import org.mindrot.jbcrypt.BCrypt
-import java.util.UUID
 
 object rest { 
 
@@ -31,9 +32,7 @@ object rest {
   }
 
   @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
-  class UserSession(sess: String) extends Object() {
-    @NotNull var session: String = sess
-  }
+  case class UserSession(@NotNull var session: String) extends Object() {}
 
   trait ResultSetToMap {
     def convertResultSetToMap(rs: ResultSet) : List[Map[String, Object]] = {
@@ -135,27 +134,39 @@ object rest {
         sqlAccess.insert("user_sessions", 
                          Map("user_id" -> resp.get("id").get.asInstanceOf[String], 
                              "token"   -> uuid))
-        new UserSession(uuid)
-        
+        UserSession(uuid)
       }) match {
         case Failure(SqlNoRowFound()) => throwCustomValidationException(r, "general", "Bad username or pw", "") 
         case Failure(e)               => throwSqlToJerseyException(r, e)
         case Success(s)               => Response.ok(s).build
       }
 
+    @Path("profile/{session}") @GET @Produces(Array(MediaType.APPLICATION_JSON))
+    def profile(@PathParam("session") session: String) = 
+      Try({
+        var sess = sqlAccess.retrieveOne("user_sessions", Map("token" -> session))
+        var id   = sess.get("user_id").get.asInstanceOf[String]
+        var user = sqlAccess.retrieveOne("users", Map("id" -> id))
+        var filt = user.filter(m => !m._1.equals("password"))
+        mapAsJavaMap(filt)
+      }) match {
+        case Failure(SqlNoRowFound()) => throwCustomValidationException(new Object(), "general", "Not found", "") 
+        case Failure(e)               => throwSqlToJerseyException(new Object(), e)
+        case Success(s)               => Response.ok(s).build
+      }
+
     @Path("register") @POST @Produces(Array(MediaType.APPLICATION_JSON))
     def register(@Valid r: RegisterUser) = 
       Try(
-        sqlAccess.insert("users", 
-                         Map("username" -> r.username, 
-                             "email"    -> r.email,  
-                             "password" -> BCrypt.hashpw(r.password, BCrypt.gensalt(12))))
+        sqlAccess.insert("users", Map("username" -> r.username, 
+                                      "email"    -> r.email,  
+                                      "password" -> BCrypt.hashpw(r.password, BCrypt.gensalt(12))))
       ) match {
         case Failure(e) => throwSqlToJerseyException(r, e)
         case Success(s) => Response.ok().build
       }
 
-  }
+ }
 
   var server:Server = null
 
