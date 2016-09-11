@@ -1,6 +1,5 @@
-import java.util.{ArrayList, HashMap, HashSet}
+import java.util.{ArrayList, HashMap, HashSet, UUID}
 import java.sql.{DriverManager, Statement, ResultSet, SQLException}
-import java.util.UUID
 import scala.util._
 import collection.JavaConversions._
 import javax.validation.constraints.{NotNull}
@@ -17,7 +16,9 @@ import com.newfivefour.jerseycustomvalidationerror.CustomValidationError._
 import org.mindrot.jbcrypt.BCrypt
 
 object rest { 
+
   var server:Server = null
+  var sqlA: Sqlite = new Sqlite("jdbc:sqlite:db")
 
   @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
   class RegisterUser extends Object() {
@@ -116,9 +117,7 @@ object rest {
 
   }
 
-  class SessionFilter extends ContainerRequestFilter {
-    var sqlAccess: Sqlite = new Sqlite("jdbc:sqlite:db") 
-
+  class SessionFilter(var sqlAccess: Sqlite) extends ContainerRequestFilter {
     override def filter(requestContext: ContainerRequestContext):Unit = {
       try {
         var header = requestContext.getHeaderString("SESSION")
@@ -132,11 +131,18 @@ object rest {
     }
   }
 
-  @Path("/") class Users {
+  object UserUtils {
+    def get(request: ContainerRequestContext, prop: String) = {
+      Try(
+        request.getProperty("SESSION").asInstanceOf[Map[String,String]].get(prop).get
+      ) match {
+        case Failure(e) => null
+        case Success(s) => s
+      }
+    }
+  }
 
-    @Context var request:ContainerRequestContext = null
-    var sqlAccess: Sqlite = new Sqlite("jdbc:sqlite:db")
-
+  @Path("/") class Users(var sqlAccess: Sqlite) {
 
     def throwSqlToJerseyException(inputOb: Object, e: Throwable) = e match {
       case SqlUniqueConstraintException(col, input) => throwCustomValidationException(inputOb, col, "Duplicate " + col, input)
@@ -187,12 +193,22 @@ object rest {
 
   }
 
+  @Path("/a") class Other {
+    @Context var request1:ContainerRequestContext = null
+
+    @Path("/thing/{hi}") @GET @Produces(Array(MediaType.APPLICATION_JSON))
+    def login(@PathParam("hi") s: String, @Context request:ContainerRequestContext) = {
+      mapAsJavaMap(Map("thing"->UserUtils.get(request, "username")))
+    }
+  }
+
   def main(args: Array[String]): Unit =
     server = JettyHttpContainerFactory.createServer(
       UriBuilder.fromUri("http://localhost/").port(8901).build(),
       new ResourceConfig() {
-        register(classOf[Users])
-        register(classOf[SessionFilter])
+        classOf[ResourceConfig].getMethod("register", classOf[Object]).invoke(this, new Users(sqlA))
+        classOf[ResourceConfig].getMethod("register", classOf[Object]).invoke(this, new SessionFilter(sqlA))
+        register(classOf[Other])
         property(ServerProperties.BV_SEND_ERROR_IN_RESPONSE, true)
       }
     ) 
