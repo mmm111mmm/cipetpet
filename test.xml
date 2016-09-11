@@ -3,6 +3,7 @@
     <classes>
       <class name="RegisterTests" />
       <class name="LoginTests" />
+      <class name="ProfileTests" />
     </classes>
   </test>
 </suite>

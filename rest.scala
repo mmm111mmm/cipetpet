@@ -6,8 +6,9 @@ import collection.JavaConversions._
 import javax.validation.constraints.{NotNull}
 import javax.validation.{Valid, ConstraintViolation, ConstraintViolationException}
 import javax.validation.metadata.ConstraintDescriptor
-import javax.ws.rs.core.{MediaType, UriBuilder, Response}
 import javax.ws.rs.{ApplicationPath, GET, Path, Produces, PathParam, QueryParam, POST}
+import javax.ws.rs.core.{MediaType, UriBuilder, Response, Context}
+import javax.ws.rs.container.{ContainerRequestContext,ContainerRequestFilter}
 import org.glassfish.jersey.server.{ResourceConfig, ServerProperties}
 import org.glassfish.jersey.jetty.JettyHttpContainerFactory
 import org.eclipse.jetty.server.Server
@@ -16,6 +17,7 @@ import com.newfivefour.jerseycustomvalidationerror.CustomValidationError._
 import org.mindrot.jbcrypt.BCrypt
 
 object rest { 
+  var server:Server = null
 
   @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
   class RegisterUser extends Object() {
@@ -46,7 +48,6 @@ object rest {
   case class SqlUniqueConstraintException(var column:String, var attempt:String) extends Exception(column)
   case class SqlExceptedFewerRows() extends Throwable
   case class SqlNoRowFound() extends Throwable
-  case class BadPwException() extends Throwable
 
   class Sqlite(dbstr: String) extends ResultSetToMap {
     var UNIQUE_EXP_REGEX= ".*failed: .*\\.(.*)"
@@ -115,9 +116,27 @@ object rest {
 
   }
 
-  @Path("/") class Hello {
+  class SessionFilter extends ContainerRequestFilter {
+    var sqlAccess: Sqlite = new Sqlite("jdbc:sqlite:db") 
 
+    override def filter(requestContext: ContainerRequestContext):Unit = {
+      try {
+        var header = requestContext.getHeaderString("SESSION")
+        var sess = sqlAccess.retrieveOne("user_sessions", Map("token" -> header))
+        var id   = sess.get("user_id").get.asInstanceOf[String]
+        var user = sqlAccess.retrieveOne("users", Map("id" -> id))
+        requestContext.setProperty("SESSION", user)
+      } catch { 
+        case _ : Throwable => 
+      }
+    }
+  }
+
+  @Path("/") class Users {
+
+    @Context var request:ContainerRequestContext = null
     var sqlAccess: Sqlite = new Sqlite("jdbc:sqlite:db")
+
 
     def throwSqlToJerseyException(inputOb: Object, e: Throwable) = e match {
       case SqlUniqueConstraintException(col, input) => throwCustomValidationException(inputOb, col, "Duplicate " + col, input)
@@ -130,11 +149,11 @@ object rest {
       Try({
         var resp = sqlAccess.retrieveOne("users", Map("username" -> r.username))
         if(!BCrypt.checkpw(r.password, resp.get("password").get.asInstanceOf[String])) throw new SqlNoRowFound
-        var uuid = UUID.randomUUID().toString
+        var uuid = UserSession(UUID.randomUUID.toString)
         sqlAccess.insert("user_sessions", 
                          Map("user_id" -> resp.get("id").get.asInstanceOf[String], 
-                             "token"   -> uuid))
-        UserSession(uuid)
+                             "token"   -> uuid.session))
+        uuid
       }) match {
         case Failure(SqlNoRowFound()) => throwCustomValidationException(r, "general", "Bad username or pw", "") 
         case Failure(e)               => throwSqlToJerseyException(r, e)
@@ -166,15 +185,14 @@ object rest {
         case Success(s) => Response.ok().build
       }
 
- }
-
-  var server:Server = null
+  }
 
   def main(args: Array[String]): Unit =
     server = JettyHttpContainerFactory.createServer(
       UriBuilder.fromUri("http://localhost/").port(8901).build(),
       new ResourceConfig() {
-        register(classOf[Hello])
+        register(classOf[Users])
+        register(classOf[SessionFilter])
         property(ServerProperties.BV_SEND_ERROR_IN_RESPONSE, true)
       }
     ) 
