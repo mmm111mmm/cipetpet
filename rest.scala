@@ -15,6 +15,13 @@ import com.fasterxml.jackson.annotation.{JsonAutoDetect}
 import com.newfivefour.jerseycustomvalidationerror.CustomValidationError._
 import org.mindrot.jbcrypt.BCrypt
 
+// TODO
+// * Logout of session
+// * Logout of all sessions
+// * Insert into companies if logged in
+// * View all companies
+// * Delete company if you are the owner 
+
 object rest { 
 
   var server:Server = null
@@ -28,14 +35,14 @@ object rest {
   }
 
   @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
-  class LoginUser extends Object() {
+  class LoginUser() extends Object() {
     @NotNull var email: String = null
     @NotNull var username: String = null
     @NotNull var password: String = null
   }
 
   @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
-  case class UserSession(@NotNull var session: String) extends Object() {}
+  case class UserSession(@NotNull var session: String) {}
 
   trait ResultSetToMap {
     def convertResultSetToMap(rs: ResultSet) : List[Map[String, Object]] = {
@@ -58,7 +65,7 @@ object rest {
     var rs: ResultSet = null
 
     def insert(table: String, inputMap: Map[String, String]): Integer = {
-      var insert = Try({
+      var insert = Try ({
         stmt = conn.createStatement
         var qCs = inputMap.keys.map(x => "'"+x+"'").mkString(",")
         var qVs = inputMap.values.map(x => "'"+x+"'").mkString(",")
@@ -72,7 +79,7 @@ object rest {
     }
 
     def query(sql: String): List[Map[String, Object]] = {
-      var query = Try({
+      var query = Try ({
         stmt = conn.createStatement
         rs = stmt.executeQuery(sql)
         convertResultSetToMap(rs)
@@ -93,7 +100,7 @@ object rest {
     }
 
     def retrieve(table: String, cols: Map[String, String]): List[Map[String, Object]] = {
-      var query = Try({
+      var query = Try ({
         stmt = conn.createStatement
         var sql = "select * from " + table + " where " + cols.map(x => x._1 + "='" + x._2+"'").mkString(" and ");
         rs = stmt.executeQuery(sql)
@@ -132,14 +139,24 @@ object rest {
   }
 
   object UserUtils {
-    def get(request: ContainerRequestContext, prop: String) = {
-      Try(
+    def get(request: ContainerRequestContext, prop: String) =
+      Try (
         request.getProperty("SESSION").asInstanceOf[Map[String,String]].get(prop).get
       ) match {
         case Failure(e) => null
         case Success(s) => s
       }
-    }
+
+    def loggedIn(op: => Any)(implicit request: ContainerRequestContext) =
+      Try ({
+        var user = UserUtils.get(request, "username")
+        if(user==null || user.trim.length==0) throw new IllegalArgumentException()
+        op
+      }) match {
+        case Success(s) => s
+        case Failure(e: IllegalArgumentException) => Response.status(403).build 
+        case Failure(e) => Response.status(500).build 
+      }
   }
 
   @Path("/") class Users(var sqlAccess: Sqlite) {
@@ -152,7 +169,7 @@ object rest {
 
     @Path("login") @POST @Produces(Array(MediaType.APPLICATION_JSON))
     def login(@Valid r: LoginUser) = 
-      Try({
+      Try ({
         var resp = sqlAccess.retrieveOne("users", Map("username" -> r.username))
         if(!BCrypt.checkpw(r.password, resp.get("password").get.asInstanceOf[String])) throw new SqlNoRowFound
         var uuid = UserSession(UUID.randomUUID.toString)
@@ -168,7 +185,7 @@ object rest {
 
     @Path("profile/{session}") @GET @Produces(Array(MediaType.APPLICATION_JSON))
     def profile(@PathParam("session") session: String) = 
-      Try({
+      Try ({
         var sess = sqlAccess.retrieveOne("user_sessions", Map("token" -> session))
         var id   = sess.get("user_id").get.asInstanceOf[String]
         var user = sqlAccess.retrieveOne("users", Map("id" -> id))
@@ -182,7 +199,7 @@ object rest {
 
     @Path("register") @POST @Produces(Array(MediaType.APPLICATION_JSON))
     def register(@Valid r: RegisterUser) = 
-      Try(
+      Try (
         sqlAccess.insert("users", Map("username" -> r.username, 
                                       "email"    -> r.email,  
                                       "password" -> BCrypt.hashpw(r.password, BCrypt.gensalt(12))))
@@ -194,12 +211,14 @@ object rest {
   }
 
   @Path("/a") class Other {
-    @Context var request1:ContainerRequestContext = null
+
+    @Context implicit var request:ContainerRequestContext = null
 
     @Path("/thing/{hi}") @GET @Produces(Array(MediaType.APPLICATION_JSON))
-    def login(@PathParam("hi") s: String, @Context request:ContainerRequestContext) = {
-      mapAsJavaMap(Map("thing"->UserUtils.get(request, "username")))
-    }
+    def login(@PathParam("hi") s: String) = 
+      UerUtils.loggedIn (
+        mapAsJavaMap(Map("thing"->UserUtils.get(request, "email")))
+      )
   }
 
   def main(args: Array[String]): Unit =
