@@ -16,8 +16,6 @@ import com.newfivefour.jerseycustomvalidationerror.CustomValidationError._
 import org.mindrot.jbcrypt.BCrypt
 
 // TODO
-// * Logout of session
-// * Logout of all sessions
 // * Insert into companies if logged in
 // * View all companies
 // * Delete company if you are the owner 
@@ -75,6 +73,19 @@ object rest {
       insert match {
         case Success(s) => s
         case Failure(e) => convertSqlException(e, inputMap)
+      }
+    }
+
+    def delete(table: String, whereMap: Map[String, String]): Integer = {
+      var insert = Try ({
+        stmt = conn.createStatement
+        var qCs = whereMap.map(x => x._1 + " = '" + x._2 + "'").mkString(" and ")
+        stmt.executeUpdate("delete from "+ table +" where " + qCs)
+      })
+      if(stmt!=null) stmt.close
+      insert match {
+        case Success(s) => s
+        case Failure(e) => convertSqlException(e, whereMap)
       }
     }
 
@@ -183,6 +194,29 @@ object rest {
         case Success(s)               => Response.ok(s).build
       }
 
+    @Path("logout/{session}") @GET @Produces(Array(MediaType.APPLICATION_JSON))
+    def logout(@PathParam("session") session: String) = 
+      Try (
+        sqlAccess.delete("user_sessions", Map("token" -> session))
+      ) match {
+        case Failure(e)         => throwSqlToJerseyException(new Object, e)
+        case Success(s) if s==0 => Response.status(404).build
+        case Success(s)         => Response.ok().build
+      }
+
+    @Path("logout_all/{session}") @GET @Produces(Array(MediaType.APPLICATION_JSON))
+    def logoutAll(@PathParam("session") session: String) = 
+      Try ({
+        var sess = sqlAccess.retrieveOne("user_sessions", Map("token" -> session))
+        var id   = sess.get("user_id").get.asInstanceOf[String]
+        sqlAccess.delete("user_sessions", Map("user_id" -> id))
+      }) match {
+        case Failure(e: SqlNoRowFound) => Response.status(404).build
+        case Failure(e)                => throwSqlToJerseyException(new Object, e)
+        case Success(s) if s==0        => Response.status(404).build
+        case Success(s)                => Response.ok().build
+      }
+
     @Path("profile/{session}") @GET @Produces(Array(MediaType.APPLICATION_JSON))
     def profile(@PathParam("session") session: String) = 
       Try ({
@@ -216,7 +250,7 @@ object rest {
 
     @Path("/thing/{hi}") @GET @Produces(Array(MediaType.APPLICATION_JSON))
     def login(@PathParam("hi") s: String) = 
-      UerUtils.loggedIn (
+      UserUtils.loggedIn (
         mapAsJavaMap(Map("thing"->UserUtils.get(request, "email")))
       )
   }
