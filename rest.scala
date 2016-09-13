@@ -1,7 +1,7 @@
 import java.util.{ArrayList, HashMap, HashSet, UUID}
 import java.sql.{DriverManager, Statement, ResultSet, SQLException}
 import scala.util._
-import collection.JavaConversions._
+import scala.collection.JavaConverters._
 import javax.validation.constraints.{NotNull}
 import javax.validation.{Valid, ConstraintViolation, ConstraintViolationException}
 import javax.validation.metadata.ConstraintDescriptor
@@ -16,8 +16,6 @@ import com.newfivefour.jerseycustomvalidationerror.CustomValidationError._
 import org.mindrot.jbcrypt.BCrypt
 
 // TODO
-// * Insert into companies if logged in
-// * View all companies
 // * Delete company if you are the owner 
 
 object rest { 
@@ -62,11 +60,11 @@ object rest {
     var stmt:Statement = null
     var rs: ResultSet = null
 
-    def insert(table: String, inputMap: Map[String, String]): Integer = {
+    def insert(table: String, inputMap: Map[String, Object]): Integer = {
       var insert = Try ({
         stmt = conn.createStatement
         var qCs = inputMap.keys.map(x => "'"+x+"'").mkString(",")
-        var qVs = inputMap.values.map(x => "'"+x+"'").mkString(",")
+        var qVs = inputMap.values.map(x => "'"+x.toString+"'").mkString(",")
         stmt.executeUpdate("insert into "+ table +" (" + qCs + ") values("+ qVs + ")")
       })
       if(stmt!=null) stmt.close
@@ -74,6 +72,11 @@ object rest {
         case Success(s) => s
         case Failure(e) => convertSqlException(e, inputMap)
       }
+    }
+
+    def insertWithUser(userId: Integer, table: String, inputMap: Map[String, Object]): Integer = {
+      var insertId = insert(table, inputMap)
+      insert(table+"_users", Map("users_id"->userId, table+"_id"->insertId))
     }
 
     def delete(table: String, whereMap: Map[String, String]): Integer = {
@@ -87,6 +90,12 @@ object rest {
         case Success(s) => s
         case Failure(e) => convertSqlException(e, whereMap)
       }
+    }
+
+    def deleteIfOwner(table: String, rowId: Integer, userId: Integer): Integer = {
+      var owners = retrieve(table+"_users", Map(table+"_id"->String.valueOf(rowId)))
+      owners.map(x => Integer.valueOf(x.get("users_id").get.asInstanceOf[String])==userId) 
+      0
     }
 
     def query(sql: String): List[Map[String, Object]] = {
@@ -125,10 +134,10 @@ object rest {
       }
     }
 
-    def convertSqlException(e: Throwable, inputMap: Map[String, String] = null) = e.getMessage match {
+    def convertSqlException(e: Throwable, inputMap: Map[String, Object] = null) = e.getMessage match {
       case msg if msg.contains(UNIQUE_CONSTRAINT_CONTAINS) => {
         var col = UNIQUE_EXP_REGEX.r("1").findFirstMatchIn(msg).get.group("1")
-        throw SqlUniqueConstraintException(col, inputMap.get(col).get)
+        throw SqlUniqueConstraintException(col, inputMap.get(col).get.toString)
       } 
       case _ => throw e
     }
@@ -163,6 +172,17 @@ object rest {
         var user = UserUtils.get(request, "username")
         if(user==null || user.trim.length==0) throw new IllegalArgumentException()
         op
+      }) match {
+        case Success(s) => s
+        case Failure(e: IllegalArgumentException) => Response.status(403).build 
+        case Failure(e) => Response.status(500).build 
+      }
+
+    def withUser(op: (Integer) => Any)(implicit request: ContainerRequestContext) =
+      Try ({
+        var id = UserUtils.get(request, "id")
+        if(id==null) throw new IllegalArgumentException
+        op(Integer.valueOf(id))
       }) match {
         case Success(s) => s
         case Failure(e: IllegalArgumentException) => Response.status(403).build 
@@ -223,8 +243,7 @@ object rest {
         var sess = sqlAccess.retrieveOne("user_sessions", Map("token" -> session))
         var id   = sess.get("user_id").get.asInstanceOf[String]
         var user = sqlAccess.retrieveOne("users", Map("id" -> id))
-        var filt = user.filter(m => !m._1.equals("password"))
-        mapAsJavaMap(filt)
+        user.filter(m => !m._1.equals("password")).asJava
       }) match {
         case Failure(SqlNoRowFound()) => throwCustomValidationException(new Object(), "general", "Not found", "") 
         case Failure(e)               => throwSqlToJerseyException(new Object(), e)
@@ -244,15 +263,37 @@ object rest {
 
   }
 
-  @Path("/a") class Other {
+  @JsonAutoDetect(fieldVisibility = JsonAutoDetect.Visibility.ANY)
+  case class Company() extends Object {
+    @NotNull var name: String = null
+    @NotNull var postcode: String = null
+    @NotNull var lat: Double = 0.0
+    @NotNull var lon: Double = 0.0
+  }
+
+  @Path("/company") class Other {
 
     @Context implicit var request:ContainerRequestContext = null
 
-    @Path("/thing/{hi}") @GET @Produces(Array(MediaType.APPLICATION_JSON))
-    def login(@PathParam("hi") s: String) = 
-      UserUtils.loggedIn (
-        mapAsJavaMap(Map("thing"->UserUtils.get(request, "email")))
+    @Path("/insert") @POST @Produces(Array(MediaType.APPLICATION_JSON))
+    def insert(@Valid o: Company) = {
+      UserUtils.withUser ( 
+        id => { sqlA.insertWithUser(id, "companies", 
+                  Map("name"     -> o.name,
+                      "postcode" -> o.postcode,
+                      "lat"      -> o.lat.asInstanceOf[Object],
+                      "lon"      -> o.lon.asInstanceOf[Object] )) }
       )
+    }
+
+    @Path("/") @GET @Produces(Array(MediaType.APPLICATION_JSON))
+    def view(@Valid o: Company) = {
+      println(sqlA.deleteIfOwner("companies", 1, 1))
+      UserUtils.loggedIn (
+        sqlA.query("select * from companies").map(x => x.asJava).asJava
+      )
+    }
+
   }
 
   def main(args: Array[String]): Unit =
