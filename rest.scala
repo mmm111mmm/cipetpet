@@ -16,7 +16,7 @@ import com.newfivefour.jerseycustomvalidationerror.CustomValidationError._
 import org.mindrot.jbcrypt.BCrypt
 
 // TODO
-// * Delete company if you are the owner 
+// * Think about joins 
 
 object rest { 
 
@@ -52,6 +52,7 @@ object rest {
   case class SqlUniqueConstraintException(var column:String, var attempt:String) extends Exception(column)
   case class SqlExceptedFewerRows() extends Throwable
   case class SqlNoRowFound() extends Throwable
+  case class SqlNotYours() extends Throwable
 
   class Sqlite(dbstr: String) extends ResultSetToMap {
     var UNIQUE_EXP_REGEX= ".*failed: .*\\.(.*)"
@@ -66,8 +67,11 @@ object rest {
         var qCs = inputMap.keys.map(x => "'"+x+"'").mkString(",")
         var qVs = inputMap.values.map(x => "'"+x.toString+"'").mkString(",")
         stmt.executeUpdate("insert into "+ table +" (" + qCs + ") values("+ qVs + ")")
+        rs = stmt.executeQuery("select last_insert_rowid();")
+        if(rs.next) rs.getInt(1) else -1
       })
       if(stmt!=null) stmt.close
+      if(rs!=null) rs.close
       insert match {
         case Success(s) => s
         case Failure(e) => convertSqlException(e, inputMap)
@@ -94,8 +98,11 @@ object rest {
 
     def deleteIfOwner(table: String, rowId: Integer, userId: Integer): Integer = {
       var owners = retrieve(table+"_users", Map(table+"_id"->String.valueOf(rowId)))
-      owners.map(x => Integer.valueOf(x.get("users_id").get.asInstanceOf[String])==userId) 
-      0
+      if(owners.length==0) throw new SqlNoRowFound
+      var owns = owners.exists(x => Integer.valueOf(x.get("users_id").get.asInstanceOf[String])==userId)
+      if(!owns) throw new SqlNotYours
+      var dr = delete(table, Map("id"->String.valueOf(rowId))) 
+      delete(table+"_users", Map(table+"_id"->String.valueOf(rowId)))
     }
 
     def query(sql: String): List[Map[String, Object]] = {
@@ -158,6 +165,8 @@ object rest {
     }
   }
 
+  case class UserNotLoggedIn() extends Throwable  
+ 
   object UserUtils {
     def get(request: ContainerRequestContext, prop: String) =
       Try (
@@ -170,23 +179,21 @@ object rest {
     def loggedIn(op: => Any)(implicit request: ContainerRequestContext) =
       Try ({
         var user = UserUtils.get(request, "username")
-        if(user==null || user.trim.length==0) throw new IllegalArgumentException()
+        if(user==null || user.trim.length==0) throw new UserNotLoggedIn()
         op
       }) match {
         case Success(s) => s
-        case Failure(e: IllegalArgumentException) => Response.status(403).build 
-        case Failure(e) => Response.status(500).build 
+        case Failure(e) => throw e
       }
 
     def withUser(op: (Integer) => Any)(implicit request: ContainerRequestContext) =
       Try ({
         var id = UserUtils.get(request, "id")
-        if(id==null) throw new IllegalArgumentException
+        if(id==null) throw new UserNotLoggedIn()
         op(Integer.valueOf(id))
       }) match {
         case Success(s) => s
-        case Failure(e: IllegalArgumentException) => Response.status(403).build 
-        case Failure(e) => Response.status(500).build 
+        case Failure(e) => throw e
       }
   }
 
@@ -277,22 +284,45 @@ object rest {
 
     @Path("/insert") @POST @Produces(Array(MediaType.APPLICATION_JSON))
     def insert(@Valid o: Company) = {
-      UserUtils.withUser ( 
-        id => { sqlA.insertWithUser(id, "companies", 
-                  Map("name"     -> o.name,
-                      "postcode" -> o.postcode,
-                      "lat"      -> o.lat.asInstanceOf[Object],
-                      "lon"      -> o.lon.asInstanceOf[Object] )) }
-      )
+      Try (
+        UserUtils.withUser ( 
+          id => sqlA.insertWithUser(id, "companies", 
+                    Map("name"     -> o.name,
+                        "postcode" -> o.postcode,
+                        "lat"      -> o.lat.asInstanceOf[Object],
+                        "lon"      -> o.lon.asInstanceOf[Object] ))
+        )
+      ) match {
+        case Failure(UserNotLoggedIn()) => Response.status(403).build
+        case Failure(e)                 => Response.status(500).build 
+        case Success(s)                 => Response.ok().build
+      }
     }
 
     @Path("/") @GET @Produces(Array(MediaType.APPLICATION_JSON))
     def view(@Valid o: Company) = {
-      println(sqlA.deleteIfOwner("companies", 1, 1))
-      UserUtils.loggedIn (
-        sqlA.query("select * from companies").map(x => x.asJava).asJava
-      )
+      Try (
+        UserUtils.loggedIn ( sqlA.query("select * from companies").map(x => x.asJava).asJava )
+      ) match {
+        case Failure(UserNotLoggedIn()) => Response.status(403).build
+        case Failure(e)                 => { println(e); Response.status(500).build }
+        case Success(s)                 => Response.ok(s).build
+      }
     }
+
+    @Path("/delete/{companyId}") @POST @Produces(Array(MediaType.APPLICATION_JSON))
+    def delete(@PathParam("companyId") companyId: Integer) = {
+      Try ({
+        UserUtils.withUser ( id => sqlA.deleteIfOwner("companies", companyId, id) )
+      }) match {
+        case Failure(UserNotLoggedIn()) => Response.status(403).build
+        case Failure(SqlNotYours())     => Response.status(403).build
+        case Failure(SqlNoRowFound())   => Response.status(404).build
+        case Failure(e)                 => Response.status(500).build
+        case Success(s)                 => Response.ok().build
+      }
+    }
+
 
   }
 
