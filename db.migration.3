@@ -1,0 +1,2 @@
+echo "create table companies (id integer primary key not null, name text not null, postcode text not null, lat double not null, lon double not null);" | sqlite3 db -interactive
+echo "create table companies_users (id integer primary key not null, users_id integer not null, companies_id integer not null, foreign key(users_id) references users(id), foreign key(companies_id) references companies(id));" | sqlite3 db -interactive
